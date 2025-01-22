@@ -1,169 +1,140 @@
 import smbus
 from time import sleep
-
-
-def p(x, *funcs):
-    for f in funcs:
-        x = f(x)
-    return x
-
-
-def set_config(t_sb="1000ms", filter="off", spi3w="disable"):
-    _t_sb = {
-        "0.5ms": 0b000,
-        "62.5ms": 0b001,
-        "125ms": 0b010,
-        "250ms": 0b011,
-        "500ms": 0b100,
-        "1000ms": 0b101,
-        "2000ms": 0b110,
-        "4000ms": 0b111,
-    }
-    _filter = {"off": 0b000, "2": 0b001, "4": 0b010, "8": 0b011, "16": 0b100}
-    _spi3w = {"disable": 0b0, "enable": 0b1}
-
-    value = (_t_sb[t_sb] << 5) | (_filter[filter] << 2) | (_spi3w[spi3w])
-    wbd(0xF5, value)
-
-
-def set_ctrl_meas(osrs_t="x16", osrs_p="x16", mode="normal"):
-    _osrs_t = {
-        "skip": 0b000,
-        "x1": 0b001,
-        "x2": 0b010,
-        "x4": 0b011,
-        "x8": 0b100,
-        "x16": 0b101,
-    }
-    _osrs_p = {
-        "skip": 0b000,
-        "x1": 0b001,
-        "x2": 0b010,
-        "x4": 0b011,
-        "x8": 0b100,
-        "x16": 0b101,
-    }
-    _mode = {"sleep": 0b00, "forced": 0b01, "normal": 0b11}
-    value = (_osrs_t[osrs_t] << 5) | (_osrs_p[osrs_p] << 2) | _mode[mode]
-    wbd(0xF4, value)
-
-
-bus = smbus.SMBus(1)
-i2c_addr = 0x76
-
-
-def rbd(register):
-    return bus.read_byte_data(i2c_addr, register)
-
-
-def wbd(register, value):
-    bus.write_byte_data(i2c_addr, register, value)
-
-
-def rwd(register):
-    return bus.read_word_data(i2c_addr, register)
+from toolz import pipe
+from ctypes import c_int16
 
 
 def sign(value):
-    return value - 65536 if value > 32767 else value
+    return c_int16(value).value
 
 
-set_config(t_sb="1000ms", filter="16")
-set_ctrl_meas(osrs_t="x16", osrs_p="x16", mode="normal")
+class BMP280:
+    STANDBY_TIMES = {
+        "0.5ms": 0,
+        "62.5ms": 1,
+        "125ms": 2,
+        "250ms": 3,
+        "500ms": 4,
+        "1000ms": 5,
+        "2000ms": 6,
+        "4000ms": 7,
+    }
+    FILTERS = {"off": 0, "2": 1, "4": 2, "8": 3, "16": 4}
+    SPI3W_MODES = {"disable": 0, "enable": 1}
+    OSRS_MODES = {"skip": 0, "x1": 1, "x2": 2, "x4": 3, "x8": 4, "x16": 5}
+    POWER_MODES = {"sleep": 0, "forced": 1, "normal": 2}
 
-dig_T1 = p(0x88, rwd)
-dig_T2 = p(0x8A, rwd, sign)
-dig_T3 = p(0x8C, rwd, sign)
-dig_P1 = p(0x8E, rwd)
-dig_P2 = p(0x90, rwd, sign)
-dig_P3 = p(0x92, rwd, sign)
-dig_P4 = p(0x94, rwd, sign)
-dig_P5 = p(0x96, rwd, sign)
-dig_P6 = p(0x98, rwd, sign)
-dig_P7 = p(0x9A, rwd, sign)
-dig_P8 = p(0x9C, rwd, sign)
-dig_P9 = p(0x9E, rwd, sign)
+    def __init__(self, bus_number=1, i2c_addr=0x76):
+        self.bus = smbus.SMBus(bus_number)
+        self.i2c_addr = i2c_addr
 
+    def set_config(self, t_sb="1000ms", filter="off", spi3w="disable"):
+        value = (
+            (self.STANDBY_TIMES[t_sb] << 5)
+            | (self.FILTERS[filter] << 2)
+            | self.SPI3W_MODES[spi3w]
+        )
+        self.wbd(0xF5, value)
 
-def calculate_temp(adc_T):
-    var1 = (((adc_T >> 3) - (dig_T1 << 1)) * dig_T2) >> 11
-    var2 = (((((adc_T >> 4) - dig_T1) * ((adc_T >> 4) - dig_T1)) >> 12) * dig_T3) >> 14
-    t_fine = var1 + var2
-    temp = (t_fine * 5 + 128) >> 8
-    temp /= 100
-    return temp, t_fine
+    def set_ctrl_meas(self, osrs_t="x16", osrs_p="x16", mode="normal"):
+        value = (
+            (self.OSRS_MODES[osrs_t] << 5)
+            | (self.OSRS_MODES[osrs_p] << 2)
+            | self.POWER_MODES[mode]
+        )
+        self.wbd(0xF4, value)
 
+    def rbd(self, register):
+        return self.bus.read_byte_data(self.i2c_addr, register)
 
-def calculate_pressure(adc_P, t_fine):
-    var1 = t_fine - 128000
-    var2 = var1 * var1 * dig_P6
-    var2 = var2 + ((var1 * dig_P5) << 17)
-    var2 = var2 + (dig_P4 << 35)
+    def wbd(self, register, value):
+        self.bus.write_byte_data(self.i2c_addr, register, value)
 
-    var1 = ((var1 * var1 * dig_P3) >> 8) + ((var1 * dig_P2) << 12)
-    var1 = ((1 << 47) + var1) * dig_P1 >> 33
+    def rwd(self, register):
+        return self.bus.read_word_data(self.i2c_addr, register)
 
-    if var1 == 0:
-        return 0
+    def read_raw_temperature(self):
+        temp_msb = self.rbd(0xFA) << 12
+        temp_lsb = self.rbd(0xFB) << 4
+        temp_xlsb = self.rbd(0xFC) >> 4
+        return temp_msb + temp_lsb + temp_xlsb
 
-    p = 1048576 - adc_P
-    p = (((p << 31) - var2) * 3125) // var1
+    def read_raw_pressure(self):
+        press_msb = self.rbd(0xF7) << 12
+        press_lsb = self.rbd(0xF8) << 4
+        press_xlsb = self.rbd(0xF9) >> 4
+        return press_msb + press_lsb + press_xlsb
 
-    var1 = (dig_P9 * (p >> 13) * (p >> 13)) >> 25
-    var2 = (dig_P8 * p) >> 19
+    def calculate_temperature(self, adc_T):
+        dig_T1 = pipe(0x88, self.rwd)
+        dig_T2 = pipe(0x8A, self.rwd, sign)
+        dig_T3 = pipe(0x8C, self.rwd, sign)
 
-    p = ((p + var1 + var2) >> 8) + (dig_P7 << 4)
-    p /= 25600
-    return p
+        var1 = (((adc_T >> 3) - (dig_T1 << 1)) * dig_T2) >> 11
+        var2 = (
+            ((((adc_T >> 4) - dig_T1) * ((adc_T >> 4) - dig_T1)) >> 12) * dig_T3
+        ) >> 14
+        t_fine = var1 + var2
+        temp = (t_fine * 5 + 128) >> 8
+        temp /= 100
 
+        return temp, t_fine
 
-def read_raw_temperature():
-    temp_msb = rbd(0xFA) << 12
-    temp_lsb = rbd(0xFB) << 4
-    temp_xlsb = rbd(0xFC) >> 4
-    adc_T = temp_msb + temp_lsb + temp_xlsb
-    return adc_T
+    def calculate_pressure(self, adc_P, t_fine):
+        dig_P1 = pipe(0x8E, self.rwd)
+        dig_P2 = pipe(0x90, self.rwd, sign)
+        dig_P3 = pipe(0x92, self.rwd, sign)
+        dig_P4 = pipe(0x94, self.rwd, sign)
+        dig_P5 = pipe(0x96, self.rwd, sign)
+        dig_P6 = pipe(0x98, self.rwd, sign)
+        dig_P7 = pipe(0x9A, self.rwd, sign)
+        dig_P8 = pipe(0x9C, self.rwd, sign)
+        dig_P9 = pipe(0x9E, self.rwd, sign)
 
+        var1 = t_fine - 128000
+        var2 = var1 * var1 * dig_P6
+        var2 = var2 + ((var1 * dig_P5) << 17)
+        var2 = var2 + (dig_P4 << 35)
+        var1 = ((var1 * var1 * dig_P3) >> 8) + ((var1 * dig_P2) << 12)
+        var1 = ((1 << 47) + var1) * dig_P1 >> 33
+        if var1 == 0:
+            return 0
+        p = 1048576 - adc_P
+        p = (((p << 31) - var2) * 3125) // var1
+        var1 = (dig_P9 * (p >> 13) * (p >> 13)) >> 25
+        var2 = (dig_P8 * p) >> 19
+        p = ((p + var1 + var2) >> 8) + (dig_P7 << 4)
+        p /= 25600
 
-def read_raw_pressure():
-    press_msb = rbd(0xF7) << 12
-    press_lsb = rbd(0xF8) << 4
-    press_xlsb = rbd(0xF9) >> 4
-    adc_P = press_msb + press_lsb + press_xlsb
-    return adc_P
+        return p
 
+    def read_temperature(self):
+        adc_T = self.read_raw_temperature()
+        temp, _ = self.calculate_temperature(adc_T)
+        return temp
 
-def read_temperature():
-    adc_T = read_raw_temperature()
-    temp, _ = calculate_temp(adc_T)
-    return temp
-
-
-def read_pressure():
-    adc_T = read_raw_temperature()
-    adc_P = read_raw_pressure()
-    _, t_fine = calculate_temp(adc_T)
-    press = calculate_pressure(
-        adc_P,
-        t_fine,
-    )
-    return press
+    def read_pressure(self):
+        adc_T = self.read_raw_temperature()
+        _, t_fine = self.calculate_temperature(adc_T)
+        adc_P = self.read_raw_pressure()
+        return self.calculate_pressure(adc_P, t_fine)
 
 
 def main():
+    bmp280 = BMP280(bus_number=1, i2c_addr=0x76)
+    bmp280.set_config(t_sb="1000ms", filter="16")
+    bmp280.set_ctrl_meas(osrs_t="x16", osrs_p="x16", mode="normal")
     try:
         while True:
-            temperature = read_temperature()
-            pressure = read_pressure()
+            temperature = bmp280.read_temperature()
+            pressure = bmp280.read_pressure()
             print(f"Temperature: {temperature:0.1f}°C")
             print(f"Pressure: {pressure:0.1f} hPa")
             print("-" * 30)
             sleep(1)
-
     except KeyboardInterrupt:
         print("\nExiting gracefully")
 
 
 if __name__ == "__main__":
     main()
-
