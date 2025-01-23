@@ -7,12 +7,12 @@ app = web.Application()
 sio.attach(app)
 
 bmp280 = BMP280(bus_number=1, i2c_addr=0x76)
-bmp280.set_config(t_sb="1000ms", filter="16")
-bmp280.set_ctrl_meas(osrs_t="x16", osrs_p="x16", mode="normal")
 
 
 async def sensor_task():
     while True:
+        bmp280.set_config(t_sb="1000ms", filter="16")
+        bmp280.set_ctrl_meas(osrs_t="x16", osrs_p="x16", mode="normal")
         # Read fresh values each iteration
         temperature = round(bmp280.read_temperature(), 2)
         pressure = round(bmp280.read_pressure(), 2)
@@ -43,4 +43,3 @@ async def init_app():
 
 if __name__ == "__main__":
     web.run_app(init_app(), port=8080)
-

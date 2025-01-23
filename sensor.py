@@ -4,10 +4,12 @@ from sensors.bmp280 import BMP280
 
 def main() -> None:
     bmp280 = BMP280(bus_number=1, i2c_addr=0x76)
-    bmp280.set_config(t_sb="1000ms")
-    bmp280.set_ctrl_meas(osrs_t="x16", osrs_p="x16", mode="normal")
+
     try:
         while True:
+            bmp280.set_config(t_sb="1000ms")
+            bmp280.set_ctrl_meas(osrs_t="x16", osrs_p="x16", mode="normal")
+            sleep(0.1)
             temperature = bmp280.read_temperature()
             pressure = bmp280.read_pressure()
             print(f"Temperature: {temperature:0.1f}°C")
