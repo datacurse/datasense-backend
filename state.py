@@ -215,6 +215,7 @@ class GPIOMonitor:
                         f"{display_info['active']!s}"
                     )
 
+                return
                 time.sleep(1)
 
         except KeyboardInterrupt:
@@ -227,4 +228,3 @@ if __name__ == "__main__":
     monitor = GPIOMonitor()
     # Set to False to hide power and ground pins
     monitor.monitor_pins(show_power_ground=False)
-

@@ -1,8 +1,12 @@
 from aiohttp import web
 import socketio
 from sensors.bmp280 import BMP280
+from time import sleep
 
-sio = socketio.AsyncServer(async_mode="aiohttp")
+sio = socketio.AsyncServer(
+    async_mode="aiohttp",
+    cors_allowed_origins="*",  # Allow all origins
+)
 app = web.Application()
 sio.attach(app)
 
@@ -11,7 +15,9 @@ bmp280 = BMP280(bus_number=1, i2c_addr=0x76)
 
 async def sensor_task():
     while True:
-        bmp280.set_config(t_sb="1000ms", filter="16")
+        # print("damn")
+        # sleep(1)
+        bmp280.set_config(t_sb="1000ms")
         bmp280.set_ctrl_meas(osrs_t="x16", osrs_p="x16", mode="normal")
         # Read fresh values each iteration
         temperature = round(bmp280.read_temperature(), 2)
@@ -42,4 +48,4 @@ async def init_app():
 
 
 if __name__ == "__main__":
-    web.run_app(init_app(), host="localhost", port=8080)
+    web.run_app(init_app(), host="192.168.1.2", port=8080)
