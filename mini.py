@@ -1,7 +1,7 @@
-from aiohttp import web
 import socketio
+from aiohttp import web
+
 from sensors.bmp280 import BMP280
-from time import sleep
 
 sio = socketio.AsyncServer(
     async_mode="aiohttp",
@@ -48,4 +48,4 @@ async def init_app():
 
 
 if __name__ == "__main__":
-    web.run_app(init_app(), host="192.168.1.2", port=8080)
+    web.run_app(init_app(), host="192.168.2.2", port=8080)
